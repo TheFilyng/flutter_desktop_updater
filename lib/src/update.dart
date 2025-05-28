@@ -46,6 +46,8 @@ Future<Stream<UpdateProgress>> updateAppFunction({
 
       final changesFutureList = <Future<dynamic>>[];
 
+      List<FileHashModel?> erroredFiles = [];
+
       for (final file in changes) {
         if (file != null) {
           changesFutureList.add(
@@ -84,6 +86,11 @@ Future<Stream<UpdateProgress>> updateAppFunction({
             }),
           );
         }
+      }
+
+      if (erroredFiles.isNotEmpty) {
+        await updateAppFunction(
+            remoteUpdateFolder: remoteUpdateFolder, changes: erroredFiles);
       }
 
       unawaited(
