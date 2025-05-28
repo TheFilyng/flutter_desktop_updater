@@ -109,9 +109,10 @@ Future<List<FileHashModel?>> _downloadListOfFiles(
   }
 
   if (erroredFiles.isNotEmpty && shouldRetry) {
+    print("Redownloading errored files");
     await _downloadListOfFiles(
       responseStream,
-      changes,
+      erroredFiles,
       remoteUpdateFolder,
       dir,
       false,
