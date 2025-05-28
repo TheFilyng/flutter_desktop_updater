@@ -81,6 +81,8 @@ Future<Stream<UpdateProgress>> updateAppFunction({
               );
               print("Completed: ${file.filePath}");
             }).catchError((error) {
+              print("Error with file: ${file.filePath}. Error: $error");
+              erroredFiles.add(file);
               responseStream.addError(error);
               return null;
             }),
