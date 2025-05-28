@@ -91,8 +91,45 @@ Future<Stream<UpdateProgress>> updateAppFunction({
       }
 
       if (erroredFiles.isNotEmpty) {
-        await updateAppFunction(
-            remoteUpdateFolder: remoteUpdateFolder, changes: erroredFiles);
+        for (final file in erroredFiles) {
+          if (file != null) {
+            changesFutureList.add(
+              downloadFile(
+                remoteUpdateFolder,
+                file.filePath,
+                dir.path,
+                (received, total) {
+                  receivedBytes += received;
+                  responseStream.add(
+                    UpdateProgress(
+                      totalBytes: totalLengthKB,
+                      receivedBytes: receivedBytes,
+                      currentFile: file.filePath,
+                      totalFiles: totalFiles,
+                      completedFiles: completedFiles,
+                    ),
+                  );
+                },
+              ).then((_) {
+                completedFiles += 1;
+
+                responseStream.add(
+                  UpdateProgress(
+                    totalBytes: totalLengthKB,
+                    receivedBytes: receivedBytes,
+                    currentFile: file.filePath,
+                    totalFiles: totalFiles,
+                    completedFiles: completedFiles,
+                  ),
+                );
+                print("Completed from errored files: ${file.filePath}");
+              }).catchError((error) {
+                responseStream.addError(error);
+                return null;
+              }),
+            );
+          }
+        }
       }
 
       unawaited(
