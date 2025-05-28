@@ -25,18 +25,73 @@ Future<Stream<UpdateProgress>> updateAppFunction({
 
   final responseStream = StreamController<UpdateProgress>();
 
-  if (changes.isEmpty) {
-    print("No updates required.");
-    await responseStream.close();
-    return responseStream.stream;
-  }
-
   try {
     if (await dir.exists()) {
-      await _downloadListOfFiles(
-          responseStream, changes, remoteUpdateFolder, dir);
+      if (changes.isEmpty) {
+        print("No updates required.");
+        await responseStream.close();
+        return responseStream.stream;
+      }
 
-      await responseStream.close();
+      var receivedBytes = 0.0;
+      final totalFiles = changes.length;
+      var completedFiles = 0;
+
+      // Calculate total length in KB
+      final totalLengthKB = changes.fold<double>(
+        0,
+        (previousValue, element) =>
+            previousValue + ((element?.length ?? 0) / 1024.0),
+      );
+
+      final changesFutureList = <Future<dynamic>>[];
+
+      for (final file in changes) {
+        if (file != null) {
+          changesFutureList.add(
+            downloadFile(
+              remoteUpdateFolder,
+              file.filePath,
+              dir.path,
+              (received, total) {
+                receivedBytes += received;
+                responseStream.add(
+                  UpdateProgress(
+                    totalBytes: totalLengthKB,
+                    receivedBytes: receivedBytes,
+                    currentFile: file.filePath,
+                    totalFiles: totalFiles,
+                    completedFiles: completedFiles,
+                  ),
+                );
+              },
+            ).then((_) {
+              completedFiles += 1;
+
+              responseStream.add(
+                UpdateProgress(
+                  totalBytes: totalLengthKB,
+                  receivedBytes: receivedBytes,
+                  currentFile: file.filePath,
+                  totalFiles: totalFiles,
+                  completedFiles: completedFiles,
+                ),
+              );
+              print("Completed: ${file.filePath}");
+            }).catchError((error) {
+              responseStream.addError(error);
+              return null;
+            }),
+          );
+        }
+      }
+
+      unawaited(
+        Future.wait(changesFutureList).then((_) async {
+          await responseStream.close();
+        }),
+      );
+
       return responseStream.stream;
     }
   } catch (e) {
@@ -45,80 +100,4 @@ Future<Stream<UpdateProgress>> updateAppFunction({
   }
 
   return responseStream.stream;
-}
-
-Future<List<FileHashModel?>> _downloadListOfFiles(
-    StreamController<UpdateProgress> responseStream,
-    List<FileHashModel?> changes,
-    String remoteUpdateFolder,
-    Directory dir,
-    [bool shouldRetry = true]) async {
-  var receivedBytes = 0.0;
-  final totalFiles = changes.length;
-  var completedFiles = 0;
-
-  // Calculate total length in KB
-  final totalLengthKB = changes.fold<double>(
-    0,
-    (previousValue, element) =>
-        previousValue + ((element?.length ?? 0) / 1024.0),
-  );
-  final changesFutureList = <Future<dynamic>>[];
-
-  final erroredFiles = <FileHashModel?>[];
-
-  for (final file in changes) {
-    if (file != null) {
-      changesFutureList.add(
-        downloadFile(
-          remoteUpdateFolder,
-          file.filePath,
-          dir.path,
-          (received, total) {
-            receivedBytes += received;
-            responseStream.add(
-              UpdateProgress(
-                totalBytes: totalLengthKB,
-                receivedBytes: receivedBytes,
-                currentFile: file.filePath,
-                totalFiles: totalFiles,
-                completedFiles: completedFiles,
-              ),
-            );
-          },
-        ).then((_) {
-          completedFiles += 1;
-
-          responseStream.add(
-            UpdateProgress(
-              totalBytes: totalLengthKB,
-              receivedBytes: receivedBytes,
-              currentFile: file.filePath,
-              totalFiles: totalFiles,
-              completedFiles: completedFiles,
-            ),
-          );
-          print("Completed: ${file.filePath}");
-        }).catchError((error) {
-          erroredFiles.add(file);
-          responseStream.addError(error);
-          return null;
-        }),
-      );
-    }
-  }
-
-  if (erroredFiles.isNotEmpty && shouldRetry) {
-    await _downloadListOfFiles(
-      responseStream,
-      changes,
-      remoteUpdateFolder,
-      dir,
-      false,
-    );
-  }
-
-  unawaited(Future.wait(changesFutureList));
-
-  return erroredFiles;
 }
