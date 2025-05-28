@@ -36,6 +36,7 @@ Future<Stream<UpdateProgress>> updateAppFunction({
       await _downloadListOfFiles(
           responseStream, changes, remoteUpdateFolder, dir);
 
+      await responseStream.close();
       return responseStream.stream;
     }
   } catch (e) {
@@ -118,11 +119,7 @@ Future<List<FileHashModel?>> _downloadListOfFiles(
     );
   }
 
-  unawaited(
-    Future.wait(changesFutureList).then((_) {
-      responseStream.close();
-    }),
-  );
+  unawaited(Future.wait(changesFutureList));
 
   return erroredFiles;
 }
