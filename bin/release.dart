@@ -149,12 +149,17 @@ Future<void> copyDirectory(Directory source, Directory destination) async {
     destination.createSync(recursive: true);
   }
 
-  await for (final entity in source.list(recursive: true)) {
-    if (entity is File) {
-      final relativePath = path.relative(entity.path, from: source.path);
-      final newPath = path.join(destination.path, relativePath);
-      await Directory(path.dirname(newPath)).create(recursive: true);
-      await entity.copy(newPath);
+  await for (final entity
+      in source.list(recursive: false, followLinks: false)) {
+    final newPath = path.join(destination.path, path.basename(entity.path));
+
+    if (entity is Link) {
+      final target = await entity.target();
+      await Link(newPath).create(target, recursive: true);
+    } else if (entity is File) {
+      await File(entity.path).copy(newPath);
+    } else if (entity is Directory) {
+      await copyDirectory(entity, Directory(newPath));
     }
   }
 }
