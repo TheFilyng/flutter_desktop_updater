@@ -9,59 +9,63 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     }
     
     func restartApp() {
-        let debug = true
         let fileManager = FileManager.default
-        let updateDir = fileManager.currentDirectoryPath + "/update"
-        let destDir = fileManager.currentDirectoryPath
-        let executablePath = Bundle.main.executablePath ?? ""
-        let appPath = executablePath.components(separatedBy: "/Contents/").first ?? ""
-
-        let script = """
-        #!/bin/bash
-        exec > /tmp/desktop_updater_log.txt 2>&1
-        echo "Update script started"
-        echo "Copying files from: \(updateDir)"
-        cp -R "\(updateDir)/"* "\(destDir)/"
-        echo "Removing update directory"
-        rm -rf "\(updateDir)"
-        echo "Relaunching app: \(appPath)"
-        open "\(appPath)"
-        echo "Cleaning up script"
-        rm -- "$0"
-        """
-
-        let scriptPath = fileManager.temporaryDirectory.appendingPathComponent("desktop_update.sh").path
-
-        do {
-            try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
-            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
-        } catch {
-            print("Failed to create update script: \(error)")
+        let appBundlePath = Bundle.main.bundlePath
+        let updateFolder = appBundlePath + "/Contents/update"
+        guard let executablePath = Bundle.main.executablePath else {
+            print("Executable path not found")
             return
         }
 
-        let process = Process()
+        // Path to temporary script location
+        let scriptPath = NSTemporaryDirectory() + "update_and_restart.sh"
 
-        if debug {
-            // Launch script with visible Terminal for debugging
-            process.launchPath = "/usr/bin/open"
-            process.arguments = ["-a", "Terminal", scriptPath]
-        } else {
-            // Silent background execution
-            process.launchPath = "/bin/bash"
-            process.arguments = [scriptPath]
+        // Shell script content (same as above)
+        let scriptContent = """
+        #!/bin/bash
+        APP_BUNDLE_PATH="$1"
+        UPDATE_FOLDER_PATH="$2"
+        EXECUTABLE_PATH="$3"
+
+        while pgrep -f "$EXECUTABLE_PATH" > /dev/null; do
+        sleep 1
+        done
+
+        cp -R "$UPDATE_FOLDER_PATH/"* "$APP_BUNDLE_PATH/Contents/"
+
+        rm -rf "$UPDATE_FOLDER_PATH"
+
+        chmod +x "$EXECUTABLE_PATH"
+
+        open "$APP_BUNDLE_PATH"
+
+        rm -- "$0"
+        """
+
+        // Write the script to temporary file
+        do {
+            try scriptContent.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
+        } catch {
+            print("Error writing shell script: \(error)")
+            return
         }
+
+        // Launch the script as a detached process with arguments
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [scriptPath, appBundlePath, updateFolder, executablePath]
 
         do {
             try process.run()
         } catch {
             print("Failed to run update script: \(error)")
+            return
         }
 
-        // Terminate the app
-        exit(0)
+        // Terminate the app immediately
+        NSApplication.shared.terminate(nil)
     }
-
 
     
     func copyAndReplaceFiles(from sourcePath: String, to destinationPath: String) throws {
