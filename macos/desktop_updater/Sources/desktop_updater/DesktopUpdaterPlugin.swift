@@ -1,6 +1,5 @@
 import Cocoa
 import FlutterMacOS
-import Foundation
 
 public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     func getCurrentVersion() -> String {
@@ -10,86 +9,59 @@ public class DesktopUpdaterPlugin: NSObject, FlutterPlugin {
     }
     
     func restartApp() {
+        let debug = true
         let fileManager = FileManager.default
+        let updateDir = fileManager.currentDirectoryPath + "/update"
+        let destDir = fileManager.currentDirectoryPath
+        let executablePath = Bundle.main.executablePath ?? ""
+        let appPath = executablePath.components(separatedBy: "/Contents/").first ?? ""
 
-        // Get the .app bundle path
-        guard let bundlePath = Bundle.main.bundlePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-            let decodedBundlePath = bundlePath.removingPercentEncoding else {
-            print("Unable to determine bundle path.")
-            return
-        }
-
-        // Define all paths
-        let appPath = decodedBundlePath                        // e.g., /Applications/MyApp.app
-        let updateDir = "\(appPath)/Contents/Resources/update" // Where updated files are placed
-        let destDir = "\(appPath)/Contents/MacOS"              // Where main app executable lives
-        let tempDir = NSTemporaryDirectory()
-        let scriptPath = "\(tempDir)/desktop_update.sh"
-        let logPath = "/tmp/desktop_updater_log.txt"
-        let appName = (appPath as NSString).lastPathComponent
-
-        // Create shell script
         let script = """
         #!/bin/bash
-
-        LOG_FILE="\(logPath)"
-        exec > "$LOG_FILE" 2>&1
-
-        echo "---- $(date) ----"
-        echo "Starting update script..."
-
-        UPDATE_DIR="\(updateDir)"
-        DEST_DIR="\(destDir)"
-        APP_PATH="\(appPath)"
-        APP_NAME="\(appName)"
-
-        echo "Update dir: $UPDATE_DIR"
-        echo "Dest dir: $DEST_DIR"
-        echo "App name: $APP_NAME"
-
-        echo "Waiting for app to fully exit..."
-        while pgrep -x "$APP_NAME" > /dev/null; do
-        echo "App still running..."
-        sleep 0.5
-        done
-
-        if [ -d "$UPDATE_DIR" ]; then
-        echo "Copying update files..."
-        cp -Rv "$UPDATE_DIR/"* "$DEST_DIR/"
-        COPY_EXIT=$?
-        echo "cp exit code: $COPY_EXIT"
-
-        echo "Removing update directory..."
-        rm -rf "$UPDATE_DIR"
-        RM_EXIT=$?
-        echo "rm exit code: $RM_EXIT"
-        else
-        echo "Update directory not found: $UPDATE_DIR"
-        fi
-
-        echo "Relaunching app..."
-        open "$APP_PATH"
-
-        echo "Cleaning up update script..."
+        exec > /tmp/desktop_updater_log.txt 2>&1
+        echo "Update script started"
+        echo "Copying files from: \(updateDir)"
+        cp -R "\(updateDir)/"* "\(destDir)/"
+        echo "Removing update directory"
+        rm -rf "\(updateDir)"
+        echo "Relaunching app: \(appPath)"
+        open "\(appPath)"
+        echo "Cleaning up script"
         rm -- "$0"
-
-        echo "Update script finished."
         """
+
+        let scriptPath = fileManager.temporaryDirectory.appendingPathComponent("desktop_update.sh").path
 
         do {
             try script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptPath)
-
-            let task = Process()
-            task.launchPath = "/bin/bash"
-            task.arguments = [scriptPath]
-            try task.run()
-
-            exit(0) // Terminate app so update can happen
         } catch {
-            print("Error writing or executing update script: \(error)")
+            print("Failed to create update script: \(error)")
+            return
         }
+
+        let process = Process()
+
+        if debug {
+            // Launch script with visible Terminal for debugging
+            process.launchPath = "/usr/bin/open"
+            process.arguments = ["-a", "Terminal", scriptPath]
+        } else {
+            // Silent background execution
+            process.launchPath = "/bin/bash"
+            process.arguments = [scriptPath]
+        }
+
+        do {
+            try process.run()
+        } catch {
+            print("Failed to run update script: \(error)")
+        }
+
+        // Terminate the app
+        exit(0)
     }
+
 
     
     func copyAndReplaceFiles(from sourcePath: String, to destinationPath: String) throws {
