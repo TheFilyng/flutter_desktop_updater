@@ -46,6 +46,8 @@ Future<Stream<UpdateProgress>> updateAppFunction({
 
       final changesFutureList = <Future<dynamic>>[];
 
+      List<FileHashModel?> erroredFiles = [];
+
       for (final file in changes) {
         if (file != null) {
           changesFutureList.add(
@@ -79,10 +81,54 @@ Future<Stream<UpdateProgress>> updateAppFunction({
               );
               print("Completed: ${file.filePath}");
             }).catchError((error) {
+              print("Error with file: ${file.filePath}. Error: $error");
+              erroredFiles.add(file);
               responseStream.addError(error);
               return null;
             }),
           );
+        }
+      }
+
+      if (erroredFiles.isNotEmpty) {
+        for (final file in erroredFiles) {
+          if (file != null) {
+            changesFutureList.add(
+              downloadFile(
+                remoteUpdateFolder,
+                file.filePath,
+                dir.path,
+                (received, total) {
+                  receivedBytes += received;
+                  responseStream.add(
+                    UpdateProgress(
+                      totalBytes: totalLengthKB,
+                      receivedBytes: receivedBytes,
+                      currentFile: file.filePath,
+                      totalFiles: totalFiles,
+                      completedFiles: completedFiles,
+                    ),
+                  );
+                },
+              ).then((_) {
+                completedFiles += 1;
+
+                responseStream.add(
+                  UpdateProgress(
+                    totalBytes: totalLengthKB,
+                    receivedBytes: receivedBytes,
+                    currentFile: file.filePath,
+                    totalFiles: totalFiles,
+                    completedFiles: completedFiles,
+                  ),
+                );
+                print("Completed from errored files: ${file.filePath}");
+              }).catchError((error) {
+                responseStream.addError(error);
+                return null;
+              }),
+            );
+          }
         }
       }
 
